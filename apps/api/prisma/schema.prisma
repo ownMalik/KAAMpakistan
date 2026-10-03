@@ -1,0 +1,288 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum ServiceType {
+  HOURLY
+  DAILY
+  PROJECT
+  FIXED
+  NEGOTIABLE
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  AGREED
+  COMPLETED
+  CANCELLED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id               String            @id @default(uuid())
+  phone            String            @unique
+  email            String?           @unique
+  passwordHash     String
+  fullName         String
+  role             Role              @default(CUSTOMER)
+  isVerifiedPhone  Boolean           @default(false)
+  isVerifiedEmail  Boolean           @default(false)
+  avatarUrl        String?
+  city             String?
+  area             String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  providerProfile  ProviderProfile?
+  serviceRequests  ServiceRequest[]  @relation("CustomerRequests")
+  reviewsGiven     Review[]          @relation("CustomerReviews")
+  sentMessages     Message[]         @relation("SentMessages")
+  favorites        Favorite[]
+  reportsMade      Report[]          @relation("ReportedBy")
+  reportsReceived  Report[]          @relation("ReportAgainst")
+  auditLogs        AuditLog[]
+}
+
+model ProviderProfile {
+  id              String            @id @default(uuid())
+  userId          String            @unique
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio             String?
+  experienceYears Int               @default(0)
+  hourlyRate      Float?
+  dailyRate       Float?
+  projectRate     Float?
+  startingPrice   Float?
+  isAvailable     Boolean           @default(true)
+  languages       String[]
+  responseRate    Float             @default(100.0)
+  completedJobs   Int               @default(0)
+  ratingAvg       Float             @default(0.0)
+  reviewCount     Int               @default(0)
+  cnicHash        String?
+  isVerified      Boolean           @default(false)
+
+  skills              ProviderSkill[]
+  portfolio           PortfolioItem[]
+  serviceAreas        ProviderServiceArea[]
+  serviceRequests     ServiceRequest[]      @relation("ProviderRequests")
+  reviewsReceived     Review[]              @relation("ProviderReviews")
+  advertisements      Advertisement[]
+  verificationRequests VerificationRequest[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+}
+
+model VerificationRequest {
+  id            String             @id @default(uuid())
+  providerId    String
+  provider      ProviderProfile    @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  documentType  String             // e.g., "CNIC_FRONT", "CNIC_BACK", "LICENSE"
+  documentUrl   String             // Stored securely on Cloudinary/Object Storage
+  status        VerificationStatus @default(PENDING)
+  adminNotes    String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model Category {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  slug          String         @unique
+  icon          String?
+  subcategories Subcategory[]
+  createdAt     DateTime       @default(now())
+}
+
+model Subcategory {
+  id          String         @id @default(uuid())
+  name        String
+  slug        String
+  categoryId  String
+  category    Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  services    Service[]
+  createdAt   DateTime       @default(now())
+}
+
+model Service {
+  id             String          @id @default(uuid())
+  name           String          @unique
+  slug           String          @unique
+  subcategoryId  String
+  subcategory    Subcategory     @relation(fields: [subcategoryId], references: [id], onDelete: Cascade)
+  providerSkills ProviderSkill[]
+  createdAt      DateTime        @default(now())
+}
+
+model ProviderSkill {
+  id          String          @id @default(uuid())
+  providerId  String
+  provider    ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  serviceId   String
+  service     Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  rate        Float?
+  createdAt   DateTime        @default(now())
+
+  @@unique([providerId, serviceId])
+}
+
+model City {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  province  String
+  areas     Area[]
+  createdAt DateTime @default(now())
+}
+
+model Area {
+  id        String                @id @default(uuid())
+  name      String
+  cityId    String
+  city      City                  @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  providers ProviderServiceArea[]
+  createdAt DateTime              @default(now())
+}
+
+model ProviderServiceArea {
+  id         String          @id @default(uuid())
+  providerId String
+  provider   ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  areaId     String
+  area       Area            @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, areaId])
+}
+
+model PortfolioItem {
+  id          String          @id @default(uuid())
+  providerId  String
+  provider    ProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  imageUrl    String
+  createdAt   DateTime        @default(now())
+}
+
+model ServiceRequest {
+  id            String          @id @default(uuid())
+  customerId    String
+  customer      User            @relation("CustomerRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  providerId    String
+  provider      ProviderProfile @relation("ProviderRequests", fields: [providerId], references: [id], onDelete: Cascade)
+  serviceNeeded String
+  description   String?
+  scheduledDate DateTime?
+  location      String
+  status        RequestStatus   @default(PENDING)
+  agreement     Agreement?
+  conversation  Conversation?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Agreement {
+  id                String         @id @default(uuid())
+  serviceRequestId  String         @unique
+  serviceRequest    ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  agreedPrice       Float
+  agreedDate        DateTime
+  duration          String?
+  customerConfirmed Boolean        @default(false)
+  providerConfirmed Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+}
+
+model Conversation {
+  id               String          @id @default(uuid())
+  serviceRequestId String?         @unique
+  serviceRequest   ServiceRequest? @relation(fields: [serviceRequestId], references: [id], onDelete: SetNull)
+  messages         Message[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  createdAt      DateTime     @default(now())
+}
+
+model Review {
+  id          String          @id @default(uuid())
+  customerId  String
+  customer    User            @relation("CustomerReviews", fields: [customerId], references: [id], onDelete: Cascade)
+  providerId  String
+  provider    ProviderProfile @relation("ProviderReviews", fields: [providerId], references: [id], onDelete: Cascade)
+  rating      Int
+  comment     String?
+  quality     Int?
+  punctuality Int?
+  createdAt   DateTime        @default(now())
+}
+
+model Report {
+  id           String   @id @default(uuid())
+  reporterId   String
+  reporter     User     @relation("ReportedBy", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedId   String
+  reported     User     @relation("ReportAgainst", fields: [reportedId], references: [id], onDelete: Cascade)
+  reason       String
+  details      String?
+  isResolved   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model Advertisement {
+  id          String           @id @default(uuid())
+  providerId  String?
+  provider    ProviderProfile? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  title       String
+  imageUrl    String
+  targetUrl   String?
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+}
+
+model Favorite {
+  id         String          @id @default(uuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId String
+  createdAt  DateTime        @default(now())
+
+  @@unique([userId, providerId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
